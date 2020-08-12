@@ -1,0 +1,8 @@
+[package]
+name = "shamir"
+version = "0.1.0"
+authors = ["ross <ross.pure@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+secp256k1 = { path = "../secp256k1" }
