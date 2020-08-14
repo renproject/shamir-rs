@@ -3,7 +3,7 @@
 extern crate test;
 
 use secp256k1::scalar::{self, Scalar};
-use shamir::{self, Share};
+use shamir::sss::{self, Share};
 use test::Bencher;
 
 #[bench]
@@ -15,7 +15,7 @@ fn bench_share_secret(b: &mut Bencher) {
     scalar::randomise_scalars_using_thread_rng(&mut indices);
     let mut shares = [Share::default(); N];
     let secret = Scalar::new_random_using_thread_rng();
-    b.iter(|| shamir::share_secret_in_place(&mut shares, &indices, &secret, k));
+    b.iter(|| sss::share_secret_in_place(&mut shares, &indices, &secret, k));
 }
 
 #[bench]
@@ -27,7 +27,7 @@ fn bench_reconstruct_secret(b: &mut Bencher) {
     scalar::randomise_scalars_using_thread_rng(&mut indices);
     let mut shares = [Share::default(); N];
     let secret = Scalar::new_random_using_thread_rng();
-    shamir::share_secret_in_place(&mut shares, &indices, &secret, k);
+    sss::share_secret_in_place(&mut shares, &indices, &secret, k);
     let mut reconstructed = Scalar::default();
-    b.iter(|| shamir::interpolate_shares_at_zero_in_place(&mut reconstructed, &shares[..k]));
+    b.iter(|| sss::interpolate_shares_at_zero_in_place(&mut reconstructed, &shares[..k]));
 }
