@@ -1,3 +1,4 @@
+use crate::rs::poly;
 use secp256k1::scalar::Scalar;
 
 #[derive(Copy, Clone, Default)]
@@ -85,21 +86,7 @@ pub fn share_secret_and_get_coeffs_in_place(
         .for_each(|c| c.randomise_using_thread_rng());
     for (i, index) in indices.iter().enumerate() {
         dst_shares[i].index = *index;
-        poly_eval_scalar_slice_in_place(&mut dst_shares[i].value, coeff_slice, index);
-    }
-}
-
-pub fn poly_eval_scalar_slice(coeffs: &[Scalar], point: &Scalar) -> Scalar {
-    let mut eval = Scalar::default();
-    poly_eval_scalar_slice_in_place(&mut eval, coeffs, point);
-    eval
-}
-
-pub fn poly_eval_scalar_slice_in_place(dst: &mut Scalar, coeffs: &[Scalar], point: &Scalar) {
-    *dst = coeffs.last().copied().unwrap_or_default();
-    for c in coeffs.iter().rev().skip(1) {
-        dst.mul_assign(point);
-        dst.add_assign(c);
+        poly::eval_scalar_slice_in_place(&mut dst_shares[i].value, coeff_slice.iter(), index);
     }
 }
 
@@ -171,7 +158,7 @@ mod tests {
     fn poly_eval_at_zero() {
         let mut coeffs = [Scalar::default(); 10];
         scalar::randomise_scalars_using_thread_rng(&mut coeffs);
-        let eval = poly_eval_scalar_slice(&coeffs, &Scalar::new_zero());
+        let eval = poly::eval_scalar_slice(&coeffs, &Scalar::new_zero());
         assert!(eval == coeffs[0]);
     }
 
@@ -179,7 +166,7 @@ mod tests {
     fn poly_eval_at_one() {
         let mut coeffs = [Scalar::default(); 10];
         scalar::randomise_scalars_using_thread_rng(&mut coeffs);
-        let eval = poly_eval_scalar_slice(&coeffs, &Scalar::new_one());
+        let eval = poly::eval_scalar_slice(&coeffs, &Scalar::new_one());
         let actual = coeffs.iter().fold(Scalar::new_zero(), |mut acc, c| {
             acc.add_assign(c);
             acc
@@ -201,7 +188,7 @@ mod tests {
         share_secret_and_get_coeffs_in_place(&mut shares, &mut coeffs, &indices, &secret);
 
         for Share { index, value } in &shares {
-            let eval = poly_eval_scalar_slice(&coeffs, index);
+            let eval = poly::eval_scalar_slice(&coeffs, index);
             assert!(eval == *value)
         }
     }

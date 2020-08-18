@@ -1,11 +1,18 @@
 use secp256k1::scalar::Scalar;
 use std::cmp;
+use std::ops::{Index, IndexMut};
 
 pub struct Poly {
     coeffs: Vec<Scalar>,
 }
 
 impl Poly {
+    pub fn new_normalised_linear(constant: &Scalar) -> Self {
+        Poly {
+            coeffs: vec![*constant, Scalar::new_one()],
+        }
+    }
+
     pub fn with_capacity(n: usize) -> Self {
         let mut poly = Poly {
             coeffs: Vec::with_capacity(n),
@@ -42,41 +49,54 @@ impl Poly {
         self.coeffs.push(Scalar::new_zero());
     }
 
-    pub fn interpolate(points: &[(Scalar, Scalar)]) -> Self {
+    pub fn set_to_one(&mut self) {
+        self.coeffs.truncate(1);
+        self.coeffs[0].set_u64(1);
+    }
+
+    fn remove_leading_zeros(&mut self) {
+        let mut last_nonzero = self.coeffs.len() - 1;
+        while self.coeffs[last_nonzero].is_zero() && last_nonzero != 0 {
+            last_nonzero -= 1;
+        }
+        self.coeffs.truncate(last_nonzero + 1);
+    }
+
+    pub fn interpolate<'a, I>(points: I) -> Self
+    where
+        I: Iterator<Item = (&'a Scalar, &'a Scalar)> + ExactSizeIterator + Clone,
+    {
         let mut interp = Poly::with_capacity(points.len());
         let mut basis_poly = Poly::with_capacity(points.len());
+        let indices = points.clone().map(|(x, _)| x);
 
         for (i, y) in points {
-            lagrange_basis_poly_in_place(&mut basis_poly, points.iter().map(|(x, _)| x), i);
+            lagrange_basis_poly_in_place(&mut basis_poly, indices.clone(), i);
             interp.add_scaled_assign(&basis_poly, y);
         }
         interp
     }
 
-    pub fn interpolate_using_basis<'a>(
-        basis_and_values: impl Iterator<Item = (&'a Poly, &'a Scalar)> + ExactSizeIterator,
-    ) -> Self {
+    pub fn interpolate_using_basis<'a, I>(basis_and_values: I) -> Self
+    where
+        I: Iterator<Item = (&'a Poly, &'a Scalar)> + ExactSizeIterator,
+    {
         let mut interp = Poly::with_capacity(basis_and_values.len());
         interp.interpolate_using_basis_in_place(basis_and_values);
         interp
     }
 
-    pub fn interpolate_using_basis_in_place<'a>(
-        &mut self,
-        basis_and_values: impl Iterator<Item = (&'a Poly, &'a Scalar)> + ExactSizeIterator,
-    ) {
+    pub fn interpolate_using_basis_in_place<'a, I>(&mut self, basis_and_values: I)
+    where
+        I: Iterator<Item = (&'a Poly, &'a Scalar)> + ExactSizeIterator,
+    {
         self.zero();
         self.coeffs.reserve_exact(basis_and_values.len() - 1);
         basis_and_values.for_each(|(b, v)| self.add_scaled_assign(b, v))
     }
 
     pub fn evaluate_at(&self, point: &Scalar) -> Scalar {
-        let mut eval = self.coeffs.last().copied().unwrap_or_default();
-        for c in self.coeffs.iter().rev().skip(1) {
-            eval.mul_assign(point);
-            eval.add_assign(c);
-        }
-        eval
+        eval_scalar_slice(&self.coeffs, point)
     }
 
     pub fn scale(&mut self, a: &Poly, scale: &Scalar) {
@@ -103,6 +123,7 @@ impl Poly {
             self.coeffs[i].add(&shorter.coeffs[i], &longer.coeffs[i]);
         }
         self.coeffs[slen..].copy_from_slice(&longer.coeffs[slen..]);
+        self.remove_leading_zeros();
     }
 
     pub fn add_assign(&mut self, a: &Poly) {
@@ -114,6 +135,31 @@ impl Poly {
             let a_tail = &a.coeffs[self.coeffs.len()..];
             self.coeffs.extend_from_slice(a_tail);
         }
+        self.remove_leading_zeros();
+    }
+
+    pub fn add_scaled(&mut self, a: &Poly, b: &Poly, scale: &Scalar) {
+        let alen = a.coeffs.len();
+        let blen = b.coeffs.len();
+        let mut prod = Scalar::default();
+        self.coeffs
+            .resize_with(cmp::max(alen, blen), Scalar::default);
+        if alen > blen {
+            for i in 0..blen {
+                prod.mul(&b.coeffs[i], scale);
+                self.coeffs[i].add(&a.coeffs[i], &prod);
+            }
+            self.coeffs[blen..].copy_from_slice(&a.coeffs[blen..]);
+        } else {
+            for i in 0..alen {
+                prod.mul(&b.coeffs[i], scale);
+                self.coeffs[i].add(&a.coeffs[i], &prod);
+            }
+            for i in alen..blen {
+                self.coeffs[i].mul(&b.coeffs[i], scale);
+            }
+        }
+        self.remove_leading_zeros();
     }
 
     pub fn add_scaled_assign(&mut self, a: &Poly, scale: &Scalar) {
@@ -123,9 +169,18 @@ impl Poly {
             prod.mul(&a.coeffs[i], scale);
             self.coeffs[i].add_assign(&prod);
         }
+        self.remove_leading_zeros();
+    }
+
+    pub fn negate_assign(&mut self) {
+        self.coeffs.iter_mut().for_each(Scalar::negate_assign)
     }
 
     pub fn mul(&mut self, a: &Poly, b: &Poly) {
+        if a.is_zero() || b.is_zero() {
+            self.zero();
+            return;
+        }
         let prod_degree = a.degree() + b.degree();
         self.coeffs.clear();
         self.coeffs.resize_with(prod_degree + 1, Scalar::default);
@@ -141,6 +196,10 @@ impl Poly {
     }
 
     pub fn mul_assign(&mut self, a: &Poly) {
+        if self.is_zero() || a.is_zero() {
+            self.zero();
+            return;
+        }
         let prod_degree = self.degree() + a.degree();
         let self_len = self.coeffs.len() as isize;
         let a_len = a.coeffs.len() as isize;
@@ -192,7 +251,7 @@ impl Poly {
                 prod.mul(&t, &c);
                 r.coeffs[degree_diff + i].add_assign(&prod);
             }
-            let _ = r.coeffs.pop();
+            r.remove_leading_zeros();
         }
     }
 }
@@ -211,6 +270,36 @@ impl PartialEq for Poly {
     }
 }
 
+impl Index<usize> for Poly {
+    type Output = Scalar;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.coeffs[index]
+    }
+}
+impl IndexMut<usize> for Poly {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.coeffs[index]
+    }
+}
+
+pub fn eval_scalar_slice(coeffs: &[Scalar], point: &Scalar) -> Scalar {
+    let mut eval = Scalar::default();
+    eval_scalar_slice_in_place(&mut eval, coeffs.iter(), point);
+    eval
+}
+
+pub fn eval_scalar_slice_in_place<'a, I>(dst: &mut Scalar, coeffs: I, point: &Scalar)
+where
+    I: DoubleEndedIterator<Item = &'a Scalar>,
+{
+    *dst = coeffs.rev().fold(Scalar::new_zero(), |mut acc, c| {
+        acc.mul_assign(point);
+        acc.add_assign(c);
+        acc
+    })
+}
+
 pub fn lagrange_basis<'a, I>(indices: I) -> Vec<Poly>
 where
     I: Iterator<Item = &'a Scalar> + ExactSizeIterator + Clone,
@@ -225,11 +314,10 @@ where
     basis
 }
 
-pub fn lagrange_basis_poly_in_place<'a>(
-    dst: &mut Poly,
-    indices: impl Iterator<Item = &'a Scalar>,
-    index: &Scalar,
-) {
+pub fn lagrange_basis_poly_in_place<'a, I>(dst: &mut Poly, indices: I, index: &Scalar)
+where
+    I: Iterator<Item = &'a Scalar>,
+{
     dst.coeffs.clear();
     dst.coeffs.push(Scalar::new_one());
     let mut prod_term = Poly::with_capacity(2);
@@ -247,6 +335,65 @@ pub fn lagrange_basis_poly_in_place<'a>(
     }
     denominator.inverse_assign();
     dst.scale_assign(&denominator);
+}
+
+pub struct EEAState {
+    pub rprev: Poly,
+    pub rnext: Poly,
+    pub sprev: Poly,
+    pub snext: Poly,
+    pub tprev: Poly,
+    pub tnext: Poly,
+    q: Poly,
+    rem: Poly,
+}
+
+impl EEAState {
+    pub fn new(a: &Poly, b: &Poly) -> Self {
+        let max_cap = cmp::max(a.coeffs.len(), b.coeffs.len());
+        let mut rprev = Poly::with_capacity(a.coeffs.len());
+        let mut rnext = Poly::with_capacity(b.coeffs.len());
+        let mut sprev = Poly::with_capacity(max_cap);
+        let snext = Poly::with_capacity(max_cap);
+        let tprev = Poly::with_capacity(max_cap);
+        let mut tnext = Poly::with_capacity(max_cap);
+        let q = Poly::with_capacity(max_cap);
+        let rem = Poly::with_capacity(max_cap);
+
+        rprev.set(a);
+        rnext.set(b);
+        sprev.coeffs[0].set_u64(1);
+        tnext.coeffs[0].set_u64(1);
+
+        EEAState {
+            rprev,
+            rnext,
+            sprev,
+            snext,
+            tprev,
+            tnext,
+            q,
+            rem,
+        }
+    }
+
+    pub fn step(&mut self) {
+        self.q.divide(&mut self.rem, &self.rprev, &self.rnext);
+        self.rprev.set(&self.rnext);
+        self.rnext.set(&self.rem);
+
+        self.rem.mul(&self.q, &self.snext);
+        self.rem.negate_assign();
+        self.rem.add_assign(&self.sprev);
+        self.sprev.set(&self.snext);
+        self.snext.set(&self.rem);
+
+        self.rem.mul(&self.q, &self.tnext);
+        self.rem.negate_assign();
+        self.rem.add_assign(&self.tprev);
+        self.tprev.set(&self.tnext);
+        self.tnext.set(&self.rem);
+    }
 }
 
 #[cfg(test)]
@@ -298,7 +445,7 @@ mod tests {
             x.randomise_using_thread_rng();
             y.randomise_using_thread_rng();
         }
-        let interp = Poly::interpolate(&points);
+        let interp = Poly::interpolate(points.iter().map(|(x, y)| (x, y)));
         for (x, y) in &points {
             assert!(interp.evaluate_at(x) == *y);
         }
@@ -331,6 +478,42 @@ mod tests {
         let interp = Poly::interpolate_using_basis(basis.iter().zip(points.iter().map(|(_, y)| y)));
         for (x, y) in &points {
             assert!(interp.evaluate_at(x) == *y);
+        }
+    }
+
+    #[test]
+    fn eea_steps_keep_invariant() {
+        let alen = 7;
+        let blen = 10;
+        let max_len = cmp::max(alen, blen);
+        let mut a = Poly::with_capacity(alen);
+        let mut b = Poly::with_capacity(blen);
+        let mut tmp1 = Poly::with_capacity(max_len);
+        let mut tmp2 = Poly::with_capacity(max_len);
+        a.randomise_using_thread_rng(alen - 1);
+        b.randomise_using_thread_rng(blen - 1);
+
+        let mut eea_state = EEAState::new(&a, &b);
+        assert!({
+            tmp1.mul(&a, &eea_state.sprev);
+            tmp2.mul(&b, &eea_state.tprev);
+            tmp1.add_assign(&tmp2);
+            tmp1 == eea_state.rprev
+        });
+        assert!({
+            tmp1.mul(&a, &eea_state.snext);
+            tmp2.mul(&b, &eea_state.tnext);
+            tmp1.add_assign(&tmp2);
+            tmp1 == eea_state.rnext
+        });
+        while !eea_state.rnext.is_zero() {
+            eea_state.step();
+            assert!({
+                tmp1.mul(&a, &eea_state.snext);
+                tmp2.mul(&b, &eea_state.tnext);
+                tmp1.add_assign(&tmp2);
+                tmp1 == eea_state.rnext
+            });
         }
     }
 }
