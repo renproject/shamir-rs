@@ -2,6 +2,7 @@ use secp256k1::scalar::Scalar;
 use std::cmp;
 use std::ops::{Index, IndexMut};
 
+#[derive(Debug)]
 pub struct Poly {
     coeffs: Vec<Scalar>,
 }
@@ -9,7 +10,7 @@ pub struct Poly {
 impl Poly {
     pub fn new_normalised_linear(constant: &Scalar) -> Self {
         Poly {
-            coeffs: vec![*constant, Scalar::new_one()],
+            coeffs: vec![*constant, Scalar::one()],
         }
     }
 
@@ -17,7 +18,7 @@ impl Poly {
         let mut poly = Poly {
             coeffs: Vec::with_capacity(n),
         };
-        poly.coeffs.push(Scalar::new_zero());
+        poly.coeffs.push(Scalar::zero());
         poly
     }
 
@@ -46,7 +47,7 @@ impl Poly {
 
     pub fn zero(&mut self) {
         self.coeffs.clear();
-        self.coeffs.push(Scalar::new_zero());
+        self.coeffs.push(Scalar::zero());
     }
 
     pub fn set_to_one(&mut self) {
@@ -208,7 +209,7 @@ impl Poly {
         for i in (0..prod_degree as isize + 1).rev() {
             let (a_lower, a_upper) = (cmp::max(0, i + 1 - self_len), cmp::min(a_len, i + 1));
             let (self_lower, self_upper) = (cmp::max(0, i + 1 - a_len), cmp::min(self_len, i + 1));
-            assert!(a_upper - a_lower == self_upper - self_lower);
+            assert_eq!(a_upper - a_lower, self_upper - self_lower);
             prod.mul(
                 &a.coeffs[a_lower as usize],
                 &self.coeffs[(self_upper - 1) as usize],
@@ -232,7 +233,7 @@ impl Poly {
         self.coeffs.clear();
         r.set(a);
         if a.degree() < b.degree() {
-            self.coeffs.push(Scalar::new_zero());
+            self.coeffs.push(Scalar::zero());
             return;
         }
         self.coeffs
@@ -293,7 +294,7 @@ pub fn eval_scalar_slice_in_place<'a, I>(dst: &mut Scalar, coeffs: I, point: &Sc
 where
     I: DoubleEndedIterator<Item = &'a Scalar>,
 {
-    *dst = coeffs.rev().fold(Scalar::new_zero(), |mut acc, c| {
+    *dst = coeffs.rev().fold(Scalar::zero(), |mut acc, c| {
         acc.mul_assign(point);
         acc.add_assign(c);
         acc
@@ -319,11 +320,11 @@ where
     I: Iterator<Item = &'a Scalar>,
 {
     dst.coeffs.clear();
-    dst.coeffs.push(Scalar::new_one());
+    dst.coeffs.push(Scalar::one());
     let mut prod_term = Poly::with_capacity(2);
-    prod_term.coeffs.push(Scalar::new_one());
+    prod_term.coeffs.push(Scalar::one());
     let mut tmp = Scalar::default();
-    let mut denominator = Scalar::new_one();
+    let mut denominator = Scalar::one();
     for i in indices {
         if i == index {
             continue;
@@ -417,7 +418,7 @@ mod tests {
         q.divide(&mut r, &prod, &b);
         reconstructed.mul(&q, &b);
         reconstructed.add_assign(&r);
-        assert!(reconstructed == prod);
+        assert_eq!(reconstructed, prod);
     }
 
     #[test]
@@ -435,7 +436,7 @@ mod tests {
 
         prod.mul(&a, &b);
         prod_assign.mul_assign(&b);
-        assert!(prod == prod_assign);
+        assert_eq!(prod, prod_assign);
     }
 
     #[test]
@@ -447,7 +448,7 @@ mod tests {
         }
         let interp = Poly::interpolate(points.iter().map(|(x, y)| (x, y)));
         for (x, y) in &points {
-            assert!(interp.evaluate_at(x) == *y);
+            assert_eq!(interp.evaluate_at(x), *y);
         }
     }
 
@@ -477,7 +478,7 @@ mod tests {
         let basis = lagrange_basis(points.iter().map(|(x, _)| x));
         let interp = Poly::interpolate_using_basis(basis.iter().zip(points.iter().map(|(_, y)| y)));
         for (x, y) in &points {
-            assert!(interp.evaluate_at(x) == *y);
+            assert_eq!(interp.evaluate_at(x), *y);
         }
     }
 

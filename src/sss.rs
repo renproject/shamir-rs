@@ -90,45 +90,63 @@ pub fn share_secret_and_get_coeffs_in_place(
     }
 }
 
-pub fn interpolate_shares_at_zero<'a, S>(shares: &'a [S]) -> Scalar
+pub fn interpolate_shares_at_zero<'a, I>(shares: I) -> Scalar
 where
-    &'a S: Into<&'a Share>,
+    I: Iterator<Item = &'a Share> + Clone,
 {
     let mut result = Scalar::default();
     interpolate_shares_at_zero_in_place(&mut result, shares);
     result
 }
 
-pub fn interpolate_shares_at_zero_in_place<'a, S>(dst: &mut Scalar, shares: &'a [S])
+pub fn interpolate_shares_at_zero_in_place<'a, I>(dst: &mut Scalar, shares: I)
 where
-    &'a S: Into<&'a Share>,
+    I: Iterator<Item = &'a Share> + Clone,
 {
     let mut numerator = Scalar::default();
     let mut denominator = Scalar::default();
     let mut tmp = Scalar::default();
     dst.clear();
-    for Share { index: i, value } in shares.iter().map(<&S>::into) {
-        numerator.set_u64(1);
-        denominator.set_u64(1);
-        for Share { index: j, .. } in shares.iter().map(<&S>::into) {
-            if i == j {
-                continue;
-            }
-            numerator.mul_assign(j);
-            tmp.sub(j, i);
-            denominator.mul_assign(&tmp)
-        }
-        tmp.divide(&numerator, &denominator);
+    for Share { index: i, value } in shares.clone() {
+        eval_lagrange_basis_at_zero_in_place(
+            &mut tmp,
+            i,
+            shares.clone().map(|Share { index, .. }| index),
+            &mut numerator,
+            &mut denominator,
+        );
         tmp.mul_assign(value);
         dst.add_assign(&tmp);
     }
+}
+
+pub(crate) fn eval_lagrange_basis_at_zero_in_place<'a, I>(
+    eval: &mut Scalar,
+    i: &Scalar,
+    indices: I,
+    numerator: &mut Scalar,
+    denominator: &mut Scalar,
+) where
+    I: Iterator<Item = &'a Scalar>,
+{
+    numerator.set_u64(1);
+    denominator.set_u64(1);
+    for j in indices {
+        if i == j {
+            continue;
+        }
+        numerator.mul_assign(j);
+        eval.sub(j, i);
+        denominator.mul_assign(eval)
+    }
+    eval.divide(numerator, denominator);
 }
 
 pub fn shares_are_k_consistent(shares: &[Share], k: usize) -> bool {
     if shares.len() < k {
         panic!("not enough shares for given threshold")
     }
-    let secret = interpolate_shares_at_zero(&shares[..k]);
+    let secret = interpolate_shares_at_zero(shares[..k].iter());
     shares_are_k_consistent_with_secret(shares, &secret, k)
 }
 
@@ -141,7 +159,7 @@ pub fn shares_are_k_consistent_with_secret(shares: &[Share], secret: &Scalar, k:
     }
     let mut reconstructed_secret = Scalar::default();
     for i in 0..(shares.len() - k) {
-        interpolate_shares_at_zero_in_place(&mut reconstructed_secret, &shares[i..i + k]);
+        interpolate_shares_at_zero_in_place(&mut reconstructed_secret, shares[i..i + k].iter());
         if reconstructed_secret != *secret {
             return false;
         }
@@ -158,20 +176,20 @@ mod tests {
     fn poly_eval_at_zero() {
         let mut coeffs = [Scalar::default(); 10];
         scalar::randomise_scalars_using_thread_rng(&mut coeffs);
-        let eval = poly::eval_scalar_slice(&coeffs, &Scalar::new_zero());
-        assert!(eval == coeffs[0]);
+        let eval = poly::eval_scalar_slice(&coeffs, &Scalar::zero());
+        assert_eq!(eval, coeffs[0]);
     }
 
     #[test]
     fn poly_eval_at_one() {
         let mut coeffs = [Scalar::default(); 10];
         scalar::randomise_scalars_using_thread_rng(&mut coeffs);
-        let eval = poly::eval_scalar_slice(&coeffs, &Scalar::new_one());
-        let actual = coeffs.iter().fold(Scalar::new_zero(), |mut acc, c| {
+        let eval = poly::eval_scalar_slice(&coeffs, &Scalar::one());
+        let actual = coeffs.iter().fold(Scalar::zero(), |mut acc, c| {
             acc.add_assign(c);
             acc
         });
-        assert!(eval == actual);
+        assert_eq!(eval, actual);
     }
 
     #[test]
@@ -189,7 +207,7 @@ mod tests {
 
         for Share { index, value } in &shares {
             let eval = poly::eval_scalar_slice(&coeffs, index);
-            assert!(eval == *value)
+            assert_eq!(eval, *value)
         }
     }
 
@@ -205,8 +223,8 @@ mod tests {
         let mut shares = [Share::default(); N];
         let mut coeffs = [Scalar::default(); K];
         share_secret_and_get_coeffs_in_place(&mut shares, &mut coeffs, &indices, &secret);
-        let reconstructed = interpolate_shares_at_zero(&shares);
-        assert!(reconstructed == secret);
+        let reconstructed = interpolate_shares_at_zero(shares.iter());
+        assert_eq!(reconstructed, secret);
     }
 
     #[test]
@@ -217,8 +235,8 @@ mod tests {
 
         let secret = Scalar::new_random_using_thread_rng();
         let shares = share_secret(&indices, &secret, k);
-        let reconstructed = interpolate_shares_at_zero(&shares);
-        assert!(reconstructed == secret);
+        let reconstructed = interpolate_shares_at_zero(shares.iter());
+        assert_eq!(reconstructed, secret);
     }
 
     #[test]

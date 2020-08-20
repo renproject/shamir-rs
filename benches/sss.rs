@@ -29,5 +29,5 @@ fn bench_reconstruct_secret(b: &mut Bencher) {
     let secret = Scalar::new_random_using_thread_rng();
     sss::share_secret_in_place(&mut shares, &indices, &secret, k);
     let mut reconstructed = Scalar::default();
-    b.iter(|| sss::interpolate_shares_at_zero_in_place(&mut reconstructed, &shares[..k]));
+    b.iter(|| sss::interpolate_shares_at_zero_in_place(&mut reconstructed, shares[..k].iter()));
 }

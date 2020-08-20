@@ -1,5 +1,5 @@
 use crate::ped::{self, PedCommitment};
-use crate::sss::Share;
+use crate::sss::{self, Share};
 use secp256k1::group::Gej;
 use secp256k1::scalar::Scalar;
 
@@ -9,7 +9,7 @@ pub struct VShare {
     pub decommitment: Scalar,
 }
 
-pub type SharingCommitment = [PedCommitment];
+pub type SharingCommitment = Vec<PedCommitment>;
 
 impl VShare {
     pub fn add(&mut self, a: &VShare, b: &VShare) {
@@ -39,9 +39,24 @@ impl<'a> Into<&'a Share> for &'a VShare {
     }
 }
 
+pub fn vshare_secret(
+    h: &Gej,
+    indices: &[Scalar],
+    secret: &Scalar,
+    k: usize,
+) -> (Vec<VShare>, SharingCommitment) {
+    let n = indices.len();
+    let mut vshares = Vec::with_capacity(n);
+    let mut sharing_commitment = Vec::with_capacity(k);
+    vshares.resize_with(n, VShare::default);
+    sharing_commitment.resize_with(k, PedCommitment::default);
+    vshare_secret_in_place(&mut vshares, &mut sharing_commitment, h, indices, secret);
+    (vshares, sharing_commitment)
+}
+
 pub fn vshare_secret_in_place(
     dst_vshares: &mut [VShare],
-    dst_sharing_commitment: &mut SharingCommitment,
+    dst_sharing_commitment: &mut [PedCommitment],
     h: &Gej,
     indices: &[Scalar],
     secret: &Scalar,
@@ -80,10 +95,52 @@ pub fn vshare_secret_in_place(
     }
 }
 
-pub fn vshare_is_valid(vshare: &VShare, sharing_commitment: &SharingCommitment, h: &Gej) -> bool {
+pub fn vshare_is_valid(vshare: &VShare, sharing_commitment: &[PedCommitment], h: &Gej) -> bool {
     let expected = poly_eval_gej_slice_in_exponent(sharing_commitment, &vshare.share.index);
     let actual = ped::ped_commit(h, &vshare.share.value, &vshare.decommitment);
     expected == actual
+}
+
+pub fn interpolate_shares_at_zero<'a, I>(vshares: I) -> (Scalar, Scalar)
+where
+    I: Iterator<Item = &'a VShare> + Clone,
+{
+    let mut secret = Scalar::default();
+    let mut decommitment = Scalar::default();
+    interpolate_shares_at_zero_in_place(&mut secret, &mut decommitment, vshares);
+    (secret, decommitment)
+}
+
+pub fn interpolate_shares_at_zero_in_place<'a, I>(
+    secret_dst: &mut Scalar,
+    decommitment_dst: &mut Scalar,
+    shares: I,
+) where
+    I: Iterator<Item = &'a VShare> + Clone,
+{
+    let mut numerator = Scalar::default();
+    let mut denominator = Scalar::default();
+    let mut tmp1 = Scalar::default();
+    let mut tmp2 = Scalar::default();
+    secret_dst.clear();
+    decommitment_dst.clear();
+    for VShare {
+        share: Share { index: i, value },
+        decommitment,
+    } in shares.clone()
+    {
+        sss::eval_lagrange_basis_at_zero_in_place(
+            &mut tmp1,
+            i,
+            shares.clone().map(|vs| &vs.share.index),
+            &mut numerator,
+            &mut denominator,
+        );
+        tmp2.mul(&tmp1, value);
+        secret_dst.add_assign(&tmp2);
+        tmp2.mul(&tmp1, decommitment);
+        decommitment_dst.add_assign(&tmp2);
+    }
 }
 
 pub fn poly_eval_gej_slice_in_exponent(coeffs: &[Gej], point: &Scalar) -> Gej {

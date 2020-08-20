@@ -42,7 +42,12 @@ fn bench_reconstruct_vshared_secret(b: &mut Bencher) {
     let secret = Scalar::new_random_using_thread_rng();
     vss::vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);
     let mut reconstructed = Scalar::default();
-    b.iter(|| sss::interpolate_shares_at_zero_in_place(&mut reconstructed, &shares[..K]));
+    b.iter(|| {
+        sss::interpolate_shares_at_zero_in_place(
+            &mut reconstructed,
+            shares[..K].iter().map(<&VShare>::into),
+        )
+    });
 }
 
 #[bench]

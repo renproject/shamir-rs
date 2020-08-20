@@ -117,7 +117,7 @@ mod tests {
         let res = decode_with_precompute(&precompute, indices.iter().zip(codeword.iter()), K);
         assert!(res.is_some());
         let (res_poly, errors) = res.unwrap();
-        assert!(res_poly == poly);
+        assert_eq!(res_poly, poly);
         assert!(errors.is_none());
 
         // The number of errors is small enough that the polynomial can be reconstructed. The
@@ -128,9 +128,9 @@ mod tests {
             let res = decode_with_precompute(&precompute, indices.iter().zip(codeword.iter()), K);
             assert!(res.is_some());
             let (res_poly, errors) = res.unwrap();
-            assert!(res_poly == poly);
+            assert_eq!(res_poly, poly);
             assert!(errors.is_some());
-            assert!(errors.unwrap().as_slice() == &indices[..i]);
+            assert_eq!(errors.unwrap().as_slice(), &indices[..i]);
         }
 
         // If there are too many errors, reconstruction of the polynomial is not possible. It is
