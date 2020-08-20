@@ -13,23 +13,23 @@ impl Share {
             panic!("cannot add shares with different indices")
         }
         self.index = a.index;
-        self.value.add(&a.value, &b.value);
+        self.value.add_mut(&a.value, &b.value);
     }
 
     pub fn add_assign(&mut self, a: &Share) {
         if self.index != a.index {
             panic!("cannot add shares with different indices")
         }
-        self.value.add_assign(&a.value);
+        self.value.add_assign_mut(&a.value);
     }
 
     pub fn scale(&mut self, share: &Share, scalar: &Scalar) {
         self.index = share.index;
-        self.value.mul(&share.value, scalar);
+        self.value.mul_mut(&share.value, scalar);
     }
 
     pub fn scale_assign(&mut self, scalar: &Scalar) {
-        self.value.mul_assign(scalar);
+        self.value.mul_assign_mut(scalar);
     }
 }
 
@@ -57,14 +57,14 @@ pub fn share_secret_in_place(
     for _ in (1..k - 1).rev() {
         coeff.randomise_using_thread_rng();
         for (j, index) in indices.iter().enumerate() {
-            dst_shares[j].value.mul_assign(index);
-            dst_shares[j].value.add_assign(&coeff);
+            dst_shares[j].value.mul_assign_mut(index);
+            dst_shares[j].value.add_assign_mut(&coeff);
         }
     }
     for (i, index) in indices.iter().enumerate() {
         dst_shares[i].index = *index;
-        dst_shares[i].value.mul_assign(index);
-        dst_shares[i].value.add_assign(secret);
+        dst_shares[i].value.mul_assign_mut(index);
+        dst_shares[i].value.add_assign_mut(secret);
     }
 }
 
@@ -115,8 +115,8 @@ where
             &mut numerator,
             &mut denominator,
         );
-        tmp.mul_assign(value);
-        dst.add_assign(&tmp);
+        tmp.mul_assign_mut(value);
+        dst.add_assign_mut(&tmp);
     }
 }
 
@@ -135,11 +135,11 @@ pub(crate) fn eval_lagrange_basis_at_zero_in_place<'a, I>(
         if i == j {
             continue;
         }
-        numerator.mul_assign(j);
-        eval.sub(j, i);
-        denominator.mul_assign(eval)
+        numerator.mul_assign_mut(j);
+        eval.sub_mut(j, i);
+        denominator.mul_assign_mut(eval)
     }
-    eval.divide(numerator, denominator);
+    eval.divide_mut(numerator, denominator);
 }
 
 pub fn shares_are_k_consistent(shares: &[Share], k: usize) -> bool {
@@ -186,7 +186,7 @@ mod tests {
         scalar::randomise_scalars_using_thread_rng(&mut coeffs);
         let eval = poly::eval_scalar_slice(&coeffs, &Scalar::one());
         let actual = coeffs.iter().fold(Scalar::zero(), |mut acc, c| {
-            acc.add_assign(c);
+            acc.add_assign_mut(c);
             acc
         });
         assert_eq!(eval, actual);
@@ -266,7 +266,7 @@ mod tests {
             sum_shares[i].add(&shares1[i], &shares2[i]);
         }
         let mut sum_secret = Scalar::default();
-        sum_secret.add(&secret1, &secret2);
+        sum_secret.add_mut(&secret1, &secret2);
         assert!(shares_are_k_consistent_with_secret(
             &sum_shares,
             &sum_secret,
@@ -289,7 +289,7 @@ mod tests {
             scaled_shares[i].scale(&shares[i], &scale);
         }
         let mut scaled_secret = Scalar::default();
-        scaled_secret.mul(&secret, &scale);
+        scaled_secret.mul_mut(&secret, &scale);
         assert!(shares_are_k_consistent_with_secret(
             &scaled_shares,
             &scaled_secret,

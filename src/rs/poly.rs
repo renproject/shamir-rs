@@ -105,11 +105,11 @@ impl Poly {
         self.coeffs
             .iter_mut()
             .enumerate()
-            .for_each(|(i, c)| c.mul(&a.coeffs[i], scale));
+            .for_each(|(i, c)| c.mul_mut(&a.coeffs[i], scale));
     }
 
     pub fn scale_assign(&mut self, scale: &Scalar) {
-        self.coeffs.iter_mut().for_each(|c| c.mul_assign(scale));
+        self.coeffs.iter_mut().for_each(|c| c.mul_assign_mut(scale));
     }
 
     pub fn add(&mut self, a: &Poly, b: &Poly) {
@@ -121,7 +121,7 @@ impl Poly {
         self.coeffs.clear();
         self.coeffs.resize_with(llen, Scalar::default);
         for i in 0..llen {
-            self.coeffs[i].add(&shorter.coeffs[i], &longer.coeffs[i]);
+            self.coeffs[i].add_mut(&shorter.coeffs[i], &longer.coeffs[i]);
         }
         self.coeffs[slen..].copy_from_slice(&longer.coeffs[slen..]);
         self.remove_leading_zeros();
@@ -130,7 +130,7 @@ impl Poly {
     pub fn add_assign(&mut self, a: &Poly) {
         let min_len = cmp::min(self.coeffs.len(), a.coeffs.len());
         for i in 0..min_len {
-            self.coeffs[i].add_assign(&a.coeffs[i]);
+            self.coeffs[i].add_assign_mut(&a.coeffs[i]);
         }
         if self.coeffs.len() < a.coeffs.len() {
             let a_tail = &a.coeffs[self.coeffs.len()..];
@@ -147,17 +147,17 @@ impl Poly {
             .resize_with(cmp::max(alen, blen), Scalar::default);
         if alen > blen {
             for i in 0..blen {
-                prod.mul(&b.coeffs[i], scale);
-                self.coeffs[i].add(&a.coeffs[i], &prod);
+                prod.mul_mut(&b.coeffs[i], scale);
+                self.coeffs[i].add_mut(&a.coeffs[i], &prod);
             }
             self.coeffs[blen..].copy_from_slice(&a.coeffs[blen..]);
         } else {
             for i in 0..alen {
-                prod.mul(&b.coeffs[i], scale);
-                self.coeffs[i].add(&a.coeffs[i], &prod);
+                prod.mul_mut(&b.coeffs[i], scale);
+                self.coeffs[i].add_mut(&a.coeffs[i], &prod);
             }
             for i in alen..blen {
-                self.coeffs[i].mul(&b.coeffs[i], scale);
+                self.coeffs[i].mul_mut(&b.coeffs[i], scale);
             }
         }
         self.remove_leading_zeros();
@@ -167,14 +167,14 @@ impl Poly {
         let mut prod = Scalar::default();
         self.coeffs.resize_with(a.coeffs.len(), Scalar::default);
         for i in 0..a.coeffs.len() {
-            prod.mul(&a.coeffs[i], scale);
-            self.coeffs[i].add_assign(&prod);
+            prod.mul_mut(&a.coeffs[i], scale);
+            self.coeffs[i].add_assign_mut(&prod);
         }
         self.remove_leading_zeros();
     }
 
     pub fn negate_assign(&mut self) {
-        self.coeffs.iter_mut().for_each(Scalar::negate_assign)
+        self.coeffs.iter_mut().for_each(Scalar::negate_assign_mut)
     }
 
     pub fn mul(&mut self, a: &Poly, b: &Poly) {
@@ -190,8 +190,8 @@ impl Poly {
         let mut prod = Scalar::default();
         for i in 0..a_len {
             for j in 0..b_len {
-                prod.mul(&a.coeffs[i], &b.coeffs[j]);
-                self.coeffs[i + j].add_assign(&prod);
+                prod.mul_mut(&a.coeffs[i], &b.coeffs[j]);
+                self.coeffs[i + j].add_assign_mut(&prod);
             }
         }
     }
@@ -210,17 +210,17 @@ impl Poly {
             let (a_lower, a_upper) = (cmp::max(0, i + 1 - self_len), cmp::min(a_len, i + 1));
             let (self_lower, self_upper) = (cmp::max(0, i + 1 - a_len), cmp::min(self_len, i + 1));
             assert_eq!(a_upper - a_lower, self_upper - self_lower);
-            prod.mul(
+            prod.mul_mut(
                 &a.coeffs[a_lower as usize],
                 &self.coeffs[(self_upper - 1) as usize],
             );
             self.coeffs[i as usize] = prod;
             for j in 1..(a_upper - a_lower) {
-                prod.mul(
+                prod.mul_mut(
                     &a.coeffs[(a_lower + j) as usize],
                     &self.coeffs[(self_upper - 1 - j) as usize],
                 );
-                self.coeffs[i as usize].add_assign(&prod);
+                self.coeffs[i as usize].add_assign_mut(&prod);
             }
         }
     }
@@ -245,12 +245,12 @@ impl Poly {
 
         while !r.is_zero() && r.degree() >= b.degree() {
             let degree_diff = r.degree() - b.degree();
-            t.mul(r.leading_coefficient(), &b_coeff_inv);
+            t.mul_mut(r.leading_coefficient(), &b_coeff_inv);
             self.coeffs[degree_diff] = t;
-            t.negate_assign();
+            t.negate_assign_mut();
             for (i, c) in b.coeffs.iter().enumerate() {
-                prod.mul(&t, &c);
-                r.coeffs[degree_diff + i].add_assign(&prod);
+                prod.mul_mut(&t, &c);
+                r.coeffs[degree_diff + i].add_assign_mut(&prod);
             }
             r.remove_leading_zeros();
         }
@@ -295,8 +295,8 @@ where
     I: DoubleEndedIterator<Item = &'a Scalar>,
 {
     *dst = coeffs.rev().fold(Scalar::zero(), |mut acc, c| {
-        acc.mul_assign(point);
-        acc.add_assign(c);
+        acc.mul_assign_mut(point);
+        acc.add_assign_mut(c);
         acc
     })
 }
@@ -329,10 +329,10 @@ where
         if i == index {
             continue;
         }
-        prod_term.coeffs[0].negate(i);
+        prod_term.coeffs[0].negate_mut(i);
         dst.mul_assign(&prod_term);
-        tmp.sub(index, i);
-        denominator.mul_assign(&tmp)
+        tmp.sub_mut(index, i);
+        denominator.mul_assign_mut(&tmp)
     }
     denominator.inverse_assign();
     dst.scale_assign(&denominator);

@@ -86,7 +86,7 @@ where
     g0.set_to_one();
 
     for index in indices {
-        linear_term[0].negate(index);
+        linear_term[0].negate_mut(index);
         g0.mul_assign(&linear_term);
     }
 

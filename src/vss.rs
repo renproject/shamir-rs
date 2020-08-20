@@ -14,22 +14,22 @@ pub type SharingCommitment = Vec<PedCommitment>;
 impl VShare {
     pub fn add(&mut self, a: &VShare, b: &VShare) {
         self.share.add(&a.share, &b.share);
-        self.decommitment.add(&a.decommitment, &b.decommitment);
+        self.decommitment.add_mut(&a.decommitment, &b.decommitment);
     }
 
     pub fn add_assign(&mut self, a: &VShare) {
         self.share.add_assign(&a.share);
-        self.decommitment.add_assign(&a.decommitment);
+        self.decommitment.add_assign_mut(&a.decommitment);
     }
 
     pub fn scale(&mut self, share: &VShare, scalar: &Scalar) {
         self.share.scale(&share.share, scalar);
-        self.decommitment.mul(&share.decommitment, scalar);
+        self.decommitment.mul_mut(&share.decommitment, scalar);
     }
 
     pub fn scale_assign(&mut self, scalar: &Scalar) {
         self.share.scale_assign(scalar);
-        self.decommitment.mul_assign(scalar);
+        self.decommitment.mul_assign_mut(scalar);
     }
 }
 
@@ -78,20 +78,20 @@ pub fn vshare_secret_in_place(
         gcoeff.randomise_using_thread_rng();
         ped::ped_commit_in_place(&mut dst_sharing_commitment[i], h, &fcoeff, &gcoeff);
         for (j, index) in indices.iter().enumerate() {
-            dst_vshares[j].share.value.mul_assign(index);
-            dst_vshares[j].share.value.add_assign(&fcoeff);
-            dst_vshares[j].decommitment.mul_assign(index);
-            dst_vshares[j].decommitment.add_assign(&gcoeff);
+            dst_vshares[j].share.value.mul_assign_mut(index);
+            dst_vshares[j].share.value.add_assign_mut(&fcoeff);
+            dst_vshares[j].decommitment.mul_assign_mut(index);
+            dst_vshares[j].decommitment.add_assign_mut(&gcoeff);
         }
     }
     gcoeff.randomise_using_thread_rng();
     ped::ped_commit_in_place(&mut dst_sharing_commitment[0], h, secret, &gcoeff);
     for (i, index) in indices.iter().enumerate() {
         dst_vshares[i].share.index = *index;
-        dst_vshares[i].share.value.mul_assign(index);
-        dst_vshares[i].share.value.add_assign(secret);
-        dst_vshares[i].decommitment.mul_assign(index);
-        dst_vshares[i].decommitment.add_assign(&gcoeff);
+        dst_vshares[i].share.value.mul_assign_mut(index);
+        dst_vshares[i].share.value.add_assign_mut(secret);
+        dst_vshares[i].decommitment.mul_assign_mut(index);
+        dst_vshares[i].decommitment.add_assign_mut(&gcoeff);
     }
 }
 
@@ -136,10 +136,10 @@ pub fn interpolate_shares_at_zero_in_place<'a, I>(
             &mut numerator,
             &mut denominator,
         );
-        tmp2.mul(&tmp1, value);
-        secret_dst.add_assign(&tmp2);
-        tmp2.mul(&tmp1, decommitment);
-        decommitment_dst.add_assign(&tmp2);
+        tmp2.mul_mut(&tmp1, value);
+        secret_dst.add_assign_mut(&tmp2);
+        tmp2.mul_mut(&tmp1, decommitment);
+        decommitment_dst.add_assign_mut(&tmp2);
     }
 }
 
