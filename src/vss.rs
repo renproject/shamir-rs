@@ -1,33 +1,90 @@
-use crate::ped::{self, PedCommitment};
-use crate::sss::{self, Share};
 use secp256k1::group::Gej;
 use secp256k1::scalar::Scalar;
+use std::ops::{Deref, DerefMut};
 
-#[derive(Copy, Clone, Default)]
+use crate::ped::{self, PedCommitment};
+use crate::sss::{self, Share};
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct VShare {
     pub share: Share,
     pub decommitment: Scalar,
 }
 
-pub type SharingCommitment = Vec<PedCommitment>;
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SharingCommitment(Vec<PedCommitment>);
+
+impl SharingCommitment {
+    pub fn with_capacity(n: usize) -> Self {
+        SharingCommitment(Vec::with_capacity(n))
+    }
+
+    pub fn default_with_len(n: usize) -> Self {
+        let mut v = Vec::with_capacity(n);
+        v.resize_with(n, Gej::default);
+        SharingCommitment(v)
+    }
+
+    pub fn new_from_vec(v: Vec<PedCommitment>) -> Self {
+        SharingCommitment(v)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn push(&mut self, com: PedCommitment) {
+        self.0.push(com);
+    }
+
+    pub fn add_assign_mut(&mut self, other: &SharingCommitment) {
+        assert_eq!(self.len(), other.len());
+        for (com, other_com) in self.0.iter_mut().zip(other.0.iter()) {
+            com.add_assign(other_com);
+        }
+    }
+
+    pub fn scale_assign_mut(&mut self, scale: &Scalar) {
+        self.0.iter_mut().for_each(|c| c.scalar_mul_assign(scale));
+    }
+}
+
+impl Deref for SharingCommitment {
+    type Target = [PedCommitment];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SharingCommitment {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub struct VSharing {
+    pub vshares: Vec<VShare>,
+    pub commitment: SharingCommitment,
+}
 
 impl VShare {
-    pub fn add(&mut self, a: &VShare, b: &VShare) {
+    pub fn add_mut(&mut self, a: &VShare, b: &VShare) {
         self.share.add(&a.share, &b.share);
         self.decommitment.add_mut(&a.decommitment, &b.decommitment);
     }
 
-    pub fn add_assign(&mut self, a: &VShare) {
+    pub fn add_assign_mut(&mut self, a: &VShare) {
         self.share.add_assign(&a.share);
         self.decommitment.add_assign_mut(&a.decommitment);
     }
 
-    pub fn scale(&mut self, share: &VShare, scalar: &Scalar) {
+    pub fn scale_mut(&mut self, share: &VShare, scalar: &Scalar) {
         self.share.scale(&share.share, scalar);
         self.decommitment.mul_mut(&share.decommitment, scalar);
     }
 
-    pub fn scale_assign(&mut self, scalar: &Scalar) {
+    pub fn scale_assign_mut(&mut self, scalar: &Scalar) {
         self.share.scale_assign(scalar);
         self.decommitment.mul_assign_mut(scalar);
     }
@@ -45,13 +102,36 @@ pub fn vshare_secret(
     secret: &Scalar,
     k: usize,
 ) -> (Vec<VShare>, SharingCommitment) {
+    vshare_secret_and_decommitment(
+        h,
+        indices,
+        secret,
+        &Scalar::new_random_using_thread_rng(),
+        k,
+    )
+}
+
+pub fn vshare_secret_and_decommitment(
+    h: &Gej,
+    indices: &[Scalar],
+    secret: &Scalar,
+    decommitment: &Scalar,
+    k: usize,
+) -> (Vec<VShare>, SharingCommitment) {
     let n = indices.len();
     let mut vshares = Vec::with_capacity(n);
     let mut sharing_commitment = Vec::with_capacity(k);
     vshares.resize_with(n, VShare::default);
     sharing_commitment.resize_with(k, PedCommitment::default);
-    vshare_secret_in_place(&mut vshares, &mut sharing_commitment, h, indices, secret);
-    (vshares, sharing_commitment)
+    vshare_secret_and_decommitment_in_place(
+        &mut vshares,
+        &mut sharing_commitment,
+        h,
+        indices,
+        secret,
+        decommitment,
+    );
+    (vshares, SharingCommitment(sharing_commitment))
 }
 
 pub fn vshare_secret_in_place(
@@ -60,6 +140,24 @@ pub fn vshare_secret_in_place(
     h: &Gej,
     indices: &[Scalar],
     secret: &Scalar,
+) {
+    vshare_secret_and_decommitment_in_place(
+        dst_vshares,
+        dst_sharing_commitment,
+        h,
+        indices,
+        secret,
+        &Scalar::new_random_using_thread_rng(),
+    )
+}
+
+pub fn vshare_secret_and_decommitment_in_place(
+    dst_vshares: &mut [VShare],
+    dst_sharing_commitment: &mut [PedCommitment],
+    h: &Gej,
+    indices: &[Scalar],
+    secret: &Scalar,
+    decommitment: &Scalar,
 ) {
     let n = indices.len();
     let k = dst_sharing_commitment.len();
@@ -84,14 +182,13 @@ pub fn vshare_secret_in_place(
             dst_vshares[j].decommitment.add_assign_mut(&gcoeff);
         }
     }
-    gcoeff.randomise_using_thread_rng();
-    ped::ped_commit_in_place(&mut dst_sharing_commitment[0], h, secret, &gcoeff);
+    ped::ped_commit_in_place(&mut dst_sharing_commitment[0], h, secret, decommitment);
     for (i, index) in indices.iter().enumerate() {
         dst_vshares[i].share.index = *index;
         dst_vshares[i].share.value.mul_assign_mut(index);
         dst_vshares[i].share.value.add_assign_mut(secret);
         dst_vshares[i].decommitment.mul_assign_mut(index);
-        dst_vshares[i].decommitment.add_assign_mut(&gcoeff);
+        dst_vshares[i].decommitment.add_assign_mut(decommitment);
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::rs::poly;
 use secp256k1::scalar::Scalar;
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Share {
     pub index: Scalar,
     pub value: Scalar,
