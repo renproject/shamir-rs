@@ -1,5 +1,6 @@
 use secp256k1::group::Gej;
 use secp256k1::scalar::Scalar;
+use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 use crate::ped;
@@ -60,6 +61,21 @@ impl Deref for SharingCommitment {
 impl DerefMut for SharingCommitment {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl FromIterator<Gej> for SharingCommitment {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Gej>,
+    {
+        let iter = iter.into_iter();
+        let (lower, _) = iter.size_hint();
+        let mut commitment = Vec::with_capacity(lower);
+        for gej in iter {
+            commitment.push(gej)
+        }
+        Self(commitment)
     }
 }
 
