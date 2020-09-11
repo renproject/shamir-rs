@@ -2,7 +2,7 @@ use secp256k1::group::Gej;
 use secp256k1::scalar::Scalar;
 use std::ops::{Deref, DerefMut};
 
-use crate::ped::{self, PedCommitment};
+use crate::ped;
 use crate::sss::{self, Share};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -12,7 +12,7 @@ pub struct VShare {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct SharingCommitment(Vec<PedCommitment>);
+pub struct SharingCommitment(Vec<Gej>);
 
 impl SharingCommitment {
     pub fn with_capacity(n: usize) -> Self {
@@ -25,7 +25,7 @@ impl SharingCommitment {
         SharingCommitment(v)
     }
 
-    pub fn new_from_vec(v: Vec<PedCommitment>) -> Self {
+    pub fn new_from_vec(v: Vec<Gej>) -> Self {
         SharingCommitment(v)
     }
 
@@ -33,7 +33,7 @@ impl SharingCommitment {
         self.0.len()
     }
 
-    pub fn push(&mut self, com: PedCommitment) {
+    pub fn push(&mut self, com: Gej) {
         self.0.push(com);
     }
 
@@ -50,7 +50,7 @@ impl SharingCommitment {
 }
 
 impl Deref for SharingCommitment {
-    type Target = [PedCommitment];
+    type Target = [Gej];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -122,7 +122,7 @@ pub fn vshare_secret_and_decommitment(
     let mut vshares = Vec::with_capacity(n);
     let mut sharing_commitment = Vec::with_capacity(k);
     vshares.resize_with(n, VShare::default);
-    sharing_commitment.resize_with(k, PedCommitment::default);
+    sharing_commitment.resize_with(k, Gej::default);
     vshare_secret_and_decommitment_in_place(
         &mut vshares,
         &mut sharing_commitment,
@@ -136,7 +136,7 @@ pub fn vshare_secret_and_decommitment(
 
 pub fn vshare_secret_in_place(
     dst_vshares: &mut [VShare],
-    dst_sharing_commitment: &mut [PedCommitment],
+    dst_sharing_commitment: &mut [Gej],
     h: &Gej,
     indices: &[Scalar],
     secret: &Scalar,
@@ -153,7 +153,7 @@ pub fn vshare_secret_in_place(
 
 pub fn vshare_secret_and_decommitment_in_place(
     dst_vshares: &mut [VShare],
-    dst_sharing_commitment: &mut [PedCommitment],
+    dst_sharing_commitment: &mut [Gej],
     h: &Gej,
     indices: &[Scalar],
     secret: &Scalar,
@@ -192,7 +192,7 @@ pub fn vshare_secret_and_decommitment_in_place(
     }
 }
 
-pub fn vshare_is_valid(vshare: &VShare, sharing_commitment: &[PedCommitment], h: &Gej) -> bool {
+pub fn vshare_is_valid(vshare: &VShare, sharing_commitment: &[Gej], h: &Gej) -> bool {
     let expected = poly_eval_gej_slice_in_exponent(sharing_commitment, &vshare.share.index);
     let actual = ped::ped_commit(h, &vshare.share.value, &vshare.decommitment);
     expected == actual
@@ -270,7 +270,7 @@ mod tests {
         let mut indices = [Scalar::default(); N];
         scalar::randomise_scalars_using_thread_rng(&mut indices);
         let mut shares = [VShare::default(); N];
-        let mut sharing_commitment = [PedCommitment::default(); K];
+        let mut sharing_commitment = [Gej::default(); K];
 
         let secret = Scalar::new_random_using_thread_rng();
         vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);
@@ -287,7 +287,7 @@ mod tests {
         let mut indices = [Scalar::default(); N];
         scalar::randomise_scalars_using_thread_rng(&mut indices);
         let mut shares = [VShare::default(); N];
-        let mut sharing_commitment = [PedCommitment::default(); K];
+        let mut sharing_commitment = [Gej::default(); K];
 
         let secret = Scalar::new_random_using_thread_rng();
         vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);
@@ -305,7 +305,7 @@ mod tests {
         let mut indices = [Scalar::default(); N];
         scalar::randomise_scalars_using_thread_rng(&mut indices);
         let mut shares = [VShare::default(); N];
-        let mut sharing_commitment = [PedCommitment::default(); K];
+        let mut sharing_commitment = [Gej::default(); K];
 
         let secret = Scalar::new_random_using_thread_rng();
         vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);
@@ -323,7 +323,7 @@ mod tests {
         let mut indices = [Scalar::default(); N];
         scalar::randomise_scalars_using_thread_rng(&mut indices);
         let mut shares = [VShare::default(); N];
-        let mut sharing_commitment = [PedCommitment::default(); K];
+        let mut sharing_commitment = [Gej::default(); K];
 
         let secret = Scalar::new_random_using_thread_rng();
         vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);

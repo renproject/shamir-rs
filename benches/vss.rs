@@ -7,7 +7,6 @@ use secp256k1::{
     scalar::{self, Scalar},
 };
 use shamir::{
-    ped::PedCommitment,
     sss,
     vss::{self, VShare},
 };
@@ -22,7 +21,7 @@ fn bench_vshare_secret(b: &mut Bencher) {
     let mut indices = [Scalar::default(); N];
     scalar::randomise_scalars_using_thread_rng(&mut indices);
     let mut shares = [VShare::default(); N];
-    let mut sharing_commitment = [PedCommitment::default(); K];
+    let mut sharing_commitment = [Gej::default(); K];
     let secret = Scalar::new_random_using_thread_rng();
     b.iter(|| {
         vss::vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret)
@@ -38,7 +37,7 @@ fn bench_reconstruct_vshared_secret(b: &mut Bencher) {
     let mut indices = [Scalar::default(); N];
     scalar::randomise_scalars_using_thread_rng(&mut indices);
     let mut shares = [VShare::default(); N];
-    let mut sharing_commitment = [PedCommitment::default(); K];
+    let mut sharing_commitment = [Gej::default(); K];
     let secret = Scalar::new_random_using_thread_rng();
     vss::vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);
     let mut reconstructed = Scalar::default();
@@ -59,7 +58,7 @@ fn bench_verify_share(b: &mut Bencher) {
     let mut indices = [Scalar::default(); N];
     scalar::randomise_scalars_using_thread_rng(&mut indices);
     let mut shares = [VShare::default(); N];
-    let mut sharing_commitment = [PedCommitment::default(); K];
+    let mut sharing_commitment = [Gej::default(); K];
     let secret = Scalar::new_random_using_thread_rng();
     vss::vshare_secret_in_place(&mut shares, &mut sharing_commitment, &h, &indices, &secret);
     b.iter(|| vss::vshare_is_valid(&shares[0], &sharing_commitment, &h));
