@@ -154,10 +154,16 @@ pub fn shares_are_k_consistent_with_secret(shares: &[Share], secret: &Scalar, k:
     if shares.len() < k {
         panic!("not enough shares for given threshold")
     }
-    if shares.len() == k {
-        return true;
-    }
+    
     let mut reconstructed_secret = Scalar::default();
+    
+    if shares.len() == k {
+        interpolate_shares_at_zero_in_place(&mut reconstructed_secret, shares.iter());
+        if reconstructed_secret != *secret {
+            return false;
+        }
+    }
+    
     for i in 0..(shares.len() - k) {
         interpolate_shares_at_zero_in_place(&mut reconstructed_secret, shares[i..i + k].iter());
         if reconstructed_secret != *secret {
